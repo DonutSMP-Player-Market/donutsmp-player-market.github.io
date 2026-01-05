@@ -80,7 +80,7 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        input, textarea, button {
+        input, textarea, button, select {
             width: 100%;
             padding: 12px;
             margin: 10px 0;
@@ -92,7 +92,7 @@
             transition: all 0.3s ease;
         }
 
-        input:focus, textarea:focus {
+        input:focus, textarea:focus, select:focus {
             outline: none;
             border-color: #00d4ff;
             box-shadow: 0 0 15px rgba(0, 123, 255, 0.5);
@@ -284,17 +284,6 @@
             width: auto;
         }
 
-        select {
-            width: 100%;
-            padding: 12px;
-            margin: 10px 0;
-            border: 2px solid rgba(0, 123, 255, 0.5);
-            background: rgba(0, 20, 40, 0.8);
-            color: #fff;
-            border-radius: 8px;
-            font-size: 16px;
-        }
-
         .tabs {
             display: flex;
             gap: 10px;
@@ -372,12 +361,12 @@
             font-size: 20px;
         }
 
-        /* Added for login error */
         #loginError {
             color: #ff6666;
             margin-top: 15px;
             font-size: 14px;
             display: none;
+            text-align: center;
         }
     </style>
 </head>
@@ -514,16 +503,15 @@
                 return;
             }
 
-            // Disable button and show loading state
             loginButton.disabled = true;
             loginButton.textContent = 'Checking...';
             errorMsg.style.display = 'none';
 
             try {
-                const response = await fetch(`https://api.mojang.com/users/profiles/minecraft/${username}`);
+                // Reliable Mojang/Microsoft API endpoint (works in 2026)
+                const response = await fetch(`https://api.minecraftservices.com/minecraft/profile/lookup/name/${username}`);
 
-                if (response.status === 200) {
-                    // Valid username - proceed to login
+                if (response.ok) {
                     localStorage.setItem('minecraftUsername', username);
 
                     document.querySelector('.login-section').classList.remove('active');
@@ -547,16 +535,13 @@
                         if (window.loadVouches) window.loadVouches();
                         if (window.loadScamReports) window.loadScamReports();
                     }, 1000);
-                } else if (response.status === 404) {
-                    // Invalid username
+                } else {
                     errorMsg.style.display = 'block';
                     usernameInput.focus();
                     usernameInput.select();
-                } else {
-                    alert('Error checking username. Please try again later.');
                 }
             } catch (err) {
-                alert('Network error. Check your connection and try again.');
+                alert('Network error. Please check your connection and try again.');
             } finally {
                 loginButton.disabled = false;
                 loginButton.textContent = 'Enter Market';
@@ -566,7 +551,7 @@
         window.logout = function() {
             localStorage.removeItem('minecraftUsername');
             location.reload();
-        }
+        };
 
         window.switchTab = function(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -574,7 +559,7 @@
             
             event.target.classList.add('active');
             document.getElementById(tab + 'Tab').classList.add('active');
-        }
+        };
 
         window.searchVouches = function() {
             const search = document.getElementById('vouchSearch').value.toLowerCase();
@@ -583,15 +568,15 @@
                 const username = card.querySelector('strong').textContent.toLowerCase();
                 card.style.display = username.includes(search) ? 'block' : 'none';
             });
-        }
+        };
 
         window.openCreateModal = function() {
             document.getElementById('createModal').classList.add('active');
-        }
+        };
 
         window.closeCreateModal = function() {
             document.getElementById('createModal').classList.remove('active');
-        }
+        };
 
         window.openOffer = function(offerId, offer) {
             window.currentOfferId = offerId;
@@ -618,7 +603,7 @@
             document.getElementById('offerModal').classList.remove('active');
             window.currentOfferId = null;
             window.currentSellerUsername = null;
-        }
+        };
 
         window.openVouchModal = function() {
             if (!window.currentSellerUsername) return;
@@ -626,40 +611,40 @@
             document.getElementById('vouchUsername').textContent = window.currentSellerUsername;
             window.selectedRating = 0;
             window.updateStarDisplay();
-        }
+        };
 
         window.closeVouchModal = function() {
             document.getElementById('vouchModal').classList.remove('active');
             document.getElementById('vouchComment').value = '';
-        }
+        };
 
         window.setRating = function(rating) {
             window.selectedRating = rating;
             window.updateStarDisplay();
-        }
+        };
 
         window.updateStarDisplay = function() {
             const stars = document.querySelectorAll('#ratingStars .star');
             stars.forEach((star, index) => {
                 star.textContent = index < window.selectedRating ? '★' : '☆';
             });
-        }
+        };
 
         window.openScamReportModal = function() {
             document.getElementById('scamModal').classList.add('active');
-        }
+        };
 
         window.closeScamReportModal = function() {
             document.getElementById('scamModal').classList.remove('active');
             document.getElementById('scammerUsername').value = '';
             document.getElementById('scamItem').value = '';
             document.getElementById('scamDescription').value = '';
-        }
+        };
     </script>
 
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, query, onSnapshot, orderBy, limit, getDocs, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, query, onSnapshot, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         const firebaseConfig = {
             apiKey: "AIzaSyA8GnZIIPOv7IOL-s9Clcu4XKNj_zpWTYM",
@@ -682,8 +667,6 @@
         window.orderBy = orderBy;
         window.limit = limit;
         window.getDocs = getDocs;
-        window.deleteDoc = deleteDoc;
-        window.doc = doc;
 
         window.createOffer = async function() {
             const username = localStorage.getItem('minecraftUsername');
@@ -710,7 +693,7 @@
             document.getElementById('offerDescription').value = '';
             document.getElementById('offerPrice').value = '';
             window.closeCreateModal();
-        }
+        };
 
         window.sendMessage = async function() {
             const username = localStorage.getItem('minecraftUsername');
@@ -725,7 +708,7 @@
             });
 
             document.getElementById('chatInput').value = '';
-        }
+        };
 
         window.sendOfferMessage = async function() {
             if (!window.currentOfferId) return;
@@ -742,7 +725,7 @@
             });
 
             document.getElementById('offerChatInput').value = '';
-        }
+        };
 
         window.submitVouch = async function() {
             if (window.selectedRating === 0) {
@@ -768,7 +751,7 @@
 
             window.closeVouchModal();
             alert('Vouch submitted successfully!');
-        }
+        };
 
         window.submitScamReport = async function() {
             const username = localStorage.getItem('minecraftUsername');
@@ -796,7 +779,7 @@
 
             window.closeScamReportModal();
             alert('Scam report submitted. Thank you for helping keep the community safe!');
-        }
+        };
 
         window.loadOffers = function() {
             const q = query(collection(db, 'offers'), orderBy('timestamp', 'desc'));
@@ -875,7 +858,7 @@
             } else {
                 ratingDiv.innerHTML = '<p style="color: #888; margin: 10px 0;">No ratings yet</p>';
             }
-        }
+        };
 
         window.loadOfferChat = function(offerId) {
             const q = query(
@@ -903,7 +886,7 @@
                 });
                 chatDiv.scrollTop = chatDiv.scrollHeight;
             });
-        }
+        };
 
         window.loadChat = function() {
             const q = query(collection(db, 'chat'), orderBy('timestamp', 'desc'), limit(50));
@@ -1008,11 +991,10 @@
             });
         };
 
-        // Auto-login if username saved
         const savedUsername = localStorage.getItem('minecraftUsername');
         if (savedUsername) {
             document.getElementById('minecraftUsername').value = savedUsername;
-            doLogin(); // Will validate again on load
+            doLogin();
         }
     </script>
 </body>
