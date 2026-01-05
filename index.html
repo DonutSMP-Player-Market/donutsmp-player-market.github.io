@@ -369,7 +369,7 @@
             <div class="login-box">
                 <h2 style="margin-bottom: 20px; color: #00d4ff;">Enter Your Minecraft Username</h2>
                 <input type="text" id="minecraftUsername" placeholder="Your Minecraft Username" />
-                <button onclick="window.login()">Enter Market</button>
+                <button onclick="doLogin()">Enter Market</button>
             </div>
         </div>
 
@@ -473,6 +473,296 @@
             </div>
         </div>
     </div>
+
+    <script>
+        // DEFINE ALL FUNCTIONS FIRST BEFORE ANY OTHER SCRIPTS
+        let currentOfferId = null;
+        let currentSellerUsername = null;
+        let selectedRating = 0;
+
+        function doLogin() {
+            const username = document.getElementById('minecraftUsername').value.trim();
+            if (!username) {
+                alert('Please enter a Minecraft username');
+                return;
+            }
+            
+            localStorage.setItem('minecraftUsername', username);
+            document.querySelector('.login-section').classList.remove('active');
+            document.querySelector('.main-content').classList.add('active');
+            
+            document.getElementById('displayUsername').textContent = username;
+            document.getElementById('userHead').src = `https://crafatar.com/avatars/${username}?overlay`;
+            
+            // Wait for Firebase functions to be ready
+            setTimeout(() => {
+                if (window.loadOffers) window.loadOffers();
+                if (window.loadChat) window.loadChat();
+                if (window.loadVouches) window.loadVouches();
+                if (window.loadScamReports) window.loadScamReports();
+            }, 1000);
+        }
+
+        window.switchTab = function(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+
+        window.searchVouches = function() {
+            const search = document.getElementById('vouchSearch').value.toLowerCase();
+            const cards = document.querySelectorAll('#vouchesGrid .card');
+            cards.forEach(card => {
+                const username = card.querySelector('strong').textContent.toLowerCase();
+                card.style.display = username.includes(search) ? 'block' : 'none';
+            });
+        }
+
+        window.openCreateModal = function() {
+            document.getElementById('createModal').classList.add('active');
+        }
+
+        window.closeCreateModal = function() {
+            document.getElementById('createModal').classList.remove('active');
+        }
+
+        window.createOffer = async function() {
+            const username = localStorage.getItem('minecraftUsername');
+            const type = document.getElementById('offerType').value;
+            const title = document.getElementById('offerTitle').value.trim();
+            const description = document.getElementById('offerDescription').value.trim();
+            const price = document.getElementById('offerPrice').value.trim();
+
+            if (!title || !description || !price) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            await window.addDoc(window.collection(window.db, 'offers'), {
+                username,
+                type,
+                title,
+                description,
+                price,
+                timestamp: Date.now()
+            });
+
+            document.getElementById('offerTitle').value = '';
+            document.getElementById('offerDescription').value = '';
+            document.getElementById('offerPrice').value = '';
+            window.closeCreateModal();
+        }
+
+        window.sendMessage = async function() {
+            const username = localStorage.getItem('minecraftUsername');
+            const message = document.getElementById('chatInput').value.trim();
+            
+            if (!message) return;
+
+            await window.addDoc(window.collection(window.db, 'chat'), {
+                username,
+                message,
+                timestamp: Date.now()
+            });
+
+            document.getElementById('chatInput').value = '';
+        }
+
+        window.openOffer = function(offerId, offer) {
+            window.currentOfferId = offerId;
+            window.currentSellerUsername = offer.username;
+            const modal = document.getElementById('offerModal');
+            modal.classList.add('active');
+            
+            document.getElementById('offerDetails').innerHTML = `
+                <div class="offer-header">
+                    <img class="player-head" src="https://crafatar.com/avatars/${offer.username}?overlay" alt="${offer.username}">
+                    <strong>${offer.username}</strong>
+                </div>
+                <div class="offer-type type-${offer.type}">${offer.type.toUpperCase()}</div>
+                <h3>${offer.title}</h3>
+                <p style="margin: 15px 0;">${offer.description}</p>
+                <p style="color: #00d4ff; font-weight: bold; font-size: 18px;">💰 ${offer.price}</p>
+            `;
+
+            window.loadSellerRating(offer.username);
+            window.loadOfferChat(offerId);
+        };
+
+        window.loadSellerRating = async function(username) {
+            const q = window.query(window.collection(window.db, 'vouches'), window.orderBy('timestamp', 'desc'));
+            const snapshot = await window.getDocs(q);
+            const vouches = [];
+            snapshot.forEach((doc) => {
+                const vouch = doc.data();
+                if (vouch.sellerUsername === username) {
+                    vouches.push(vouch);
+                }
+            });
+
+            const ratingDiv = document.getElementById('sellerRating');
+            if (vouches.length > 0) {
+                const avg = (vouches.reduce((a, b) => a + b.rating, 0) / vouches.length).toFixed(1);
+                const stars = '★'.repeat(Math.round(avg)) + '☆'.repeat(5 - Math.round(avg));
+                ratingDiv.innerHTML = `
+                    <div class="rating-display" style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; margin: 10px 0;">
+                        <span style="color: #ffd700; font-size: 18px;">${stars}</span>
+                        <span>${avg}/5.0</span>
+                        <span style="color: #888;">(${vouches.length} reviews)</span>
+                    </div>
+                `;
+            } else {
+                ratingDiv.innerHTML = '<p style="color: #888; margin: 10px 0;">No ratings yet</p>';
+            }
+        }
+
+        window.closeOfferModal = function() {
+            document.getElementById('offerModal').classList.remove('active');
+            window.currentOfferId = null;
+            window.currentSellerUsername = null;
+        }
+
+        window.loadOfferChat = function(offerId) {
+            const q = window.query(
+                window.collection(window.db, `offers/${offerId}/chat`),
+                window.orderBy('timestamp', 'desc'),
+                window.limit(30)
+            );
+            
+            window.onSnapshot(q, (snapshot) => {
+                const chatDiv = document.getElementById('offerChat');
+                chatDiv.innerHTML = '';
+                const messages = [];
+                snapshot.forEach((doc) => messages.push(doc.data()));
+                messages.reverse().forEach((msg) => {
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = 'chat-message';
+                    msgDiv.innerHTML = `
+                        <img class="player-head" src="https://crafatar.com/avatars/${msg.username}?overlay" alt="${msg.username}">
+                        <div class="chat-content">
+                            <div class="chat-username">${msg.username}</div>
+                            <div class="chat-text">${msg.message}</div>
+                        </div>
+                    `;
+                    chatDiv.appendChild(msgDiv);
+                });
+                chatDiv.scrollTop = chatDiv.scrollHeight;
+            });
+        }
+
+        window.sendOfferMessage = async function() {
+            if (!window.currentOfferId) return;
+            
+            const username = localStorage.getItem('minecraftUsername');
+            const message = document.getElementById('offerChatInput').value.trim();
+            
+            if (!message) return;
+
+            await window.addDoc(window.collection(window.db, `offers/${window.currentOfferId}/chat`), {
+                username,
+                message,
+                timestamp: Date.now()
+            });
+
+            document.getElementById('offerChatInput').value = '';
+        }
+
+        window.openVouchModal = function() {
+            if (!window.currentSellerUsername) return;
+            document.getElementById('vouchModal').classList.add('active');
+            document.getElementById('vouchUsername').textContent = window.currentSellerUsername;
+            window.selectedRating = 0;
+            window.updateStarDisplay();
+        }
+
+        window.closeVouchModal = function() {
+            document.getElementById('vouchModal').classList.remove('active');
+            document.getElementById('vouchComment').value = '';
+        }
+
+        window.setRating = function(rating) {
+            window.selectedRating = rating;
+            window.updateStarDisplay();
+        }
+
+        window.updateStarDisplay = function() {
+            const stars = document.querySelectorAll('#ratingStars .star');
+            stars.forEach((star, index) => {
+                star.textContent = index < window.selectedRating ? '★' : '☆';
+            });
+        }
+
+        window.submitVouch = async function() {
+            if (window.selectedRating === 0) {
+                alert('Please select a rating');
+                return;
+            }
+
+            const username = localStorage.getItem('minecraftUsername');
+            const comment = document.getElementById('vouchComment').value.trim();
+
+            if (!comment) {
+                alert('Please leave a comment');
+                return;
+            }
+
+            await window.addDoc(window.collection(window.db, 'vouches'), {
+                buyerUsername: username,
+                sellerUsername: window.currentSellerUsername,
+                rating: window.selectedRating,
+                comment: comment,
+                timestamp: Date.now()
+            });
+
+            window.closeVouchModal();
+            alert('Vouch submitted successfully!');
+        }
+
+        window.openScamReportModal = function() {
+            document.getElementById('scamModal').classList.add('active');
+        }
+
+        window.closeScamReportModal = function() {
+            document.getElementById('scamModal').classList.remove('active');
+            document.getElementById('scammerUsername').value = '';
+            document.getElementById('scamItem').value = '';
+            document.getElementById('scamDescription').value = '';
+        }
+
+        window.submitScamReport = async function() {
+            const username = localStorage.getItem('minecraftUsername');
+            const scammerUsername = document.getElementById('scammerUsername').value.trim();
+            const itemScammed = document.getElementById('scamItem').value.trim();
+            const description = document.getElementById('scamDescription').value.trim();
+
+            if (!scammerUsername || !itemScammed || !description) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            if (scammerUsername.toLowerCase() === username.toLowerCase()) {
+                alert('You cannot report yourself');
+                return;
+            }
+
+            await window.addDoc(window.collection(window.db, 'scams'), {
+                reporterUsername: username,
+                scammerUsername: scammerUsername,
+                itemScammed: itemScammed,
+                description: description,
+                timestamp: Date.now()
+            });
+
+            window.closeScamReportModal();
+            alert('Scam report submitted. Thank you for helping keep the community safe!');
+        }
+
+        window.currentOfferId = null;
+        window.currentSellerUsername = null;
+        window.selectedRating = 0;
+    </script>
 
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
@@ -671,7 +961,7 @@
         let currentSellerUsername = null;
         let selectedRating = 0;
 
-        window.login = function() {
+        function doLogin() {
             const username = document.getElementById('minecraftUsername').value.trim();
             if (!username) {
                 alert('Please enter a Minecraft username');
@@ -690,6 +980,8 @@
             window.loadVouches();
             window.loadScamReports();
         }
+
+        window.login = doLogin;
 
         window.logout = function() {
             localStorage.removeItem('minecraftUsername');
